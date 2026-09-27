@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wildfire CA — Spread Prediction</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --char:#1b1a17; --char-2:#242220; --ember:#d95f32; --ember-dim:#a8481f;
+    --ash:#c9c4ba; --ash-dim:#8a857b; --green:#3e6b4f; --line:#3a3733;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--char);color:var(--ash);font-family:'Inter',sans-serif;}
+  header{
+    padding:20px 28px 16px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:14px;
+  }
+  header h1{
+    font-family:'Fraunces',serif; font-weight:600; font-size:1.4rem; color:var(--ash);
+    margin:0;
+  }
+  header span{font-family:'IBM Plex Mono',monospace; font-size:0.75rem; color:var(--ember);}
+  .layout{display:flex; height:calc(100vh - 65px);}
+  #map{flex:1 1 auto;}
+  #panel{
+    width:340px; flex:0 0 340px; background:var(--char-2); border-left:1px solid var(--line);
+    overflow-y:auto; padding:20px;
+  }
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--ash-dim); margin-bottom:6px;}
+  .modes{display:flex; gap:6px; margin-bottom:18px;}
+  .modes button{
+    flex:1; padding:8px 4px; background:transparent; border:1px solid var(--line); color:var(--ash-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:0.72rem; cursor:pointer; border-radius:3px;
+  }
+  .modes button.active{border-color:var(--ember); color:var(--ember); background:rgba(217,95,50,0.08);}
+  input, select{
+    width:100%; padding:8px 10px; background:var(--char); border:1px solid var(--line); color:var(--ash);
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem; border-radius:3px;
+  }
+  .hint{font-size:0.72rem; color:var(--ash-dim); margin-top:4px; line-height:1.4;}
+  button.primary{
+    width:100%; padding:11px; background:var(--ember); border:none; color:#1b1a17; font-weight:600;
+    font-family:'Inter',sans-serif; font-size:0.88rem; cursor:pointer; border-radius:3px; margin-top:6px;
+  }
+  button.primary:hover{background:var(--ember-dim); color:var(--ash);}
+  button.secondary{
+    width:100%; padding:9px; background:transparent; border:1px solid var(--line); color:var(--ash);
+    font-family:'Inter',sans-serif; font-size:0.82rem; cursor:pointer; border-radius:3px; margin-top:8px;
+  }
+  #status{font-size:0.78rem; color:var(--ash-dim); margin-top:10px; min-height:1.2em;}
+  #results{margin-top:22px; border-top:1px solid var(--line); padding-top:16px;}
+  #results h2{font-size:0.85rem; margin:0 0 10px; color:var(--ash);}
+  #frame-view{width:100%; border:1px solid var(--line); border-radius:3px; background:#000;}
+  .anim-controls{display:flex; gap:8px; margin-top:8px; align-items:center;}
+  .anim-controls button{
+    background:transparent; border:1px solid var(--line); color:var(--ash); padding:6px 10px;
+    font-family:'IBM Plex Mono',monospace; border-radius:3px; cursor:pointer;
+  }
+  .anim-controls input[type=range]{flex:1;}
+  .downloads a{
+    display:block; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; color:var(--ember);
+    text-decoration:none; margin-top:8px; border:1px solid var(--line); padding:8px 10px; border-radius:3px;
+  }
+  .downloads a:hover{background:rgba(217,95,50,0.08);}
+  .legend{display:flex; gap:14px; margin-top:10px; font-size:0.72rem; color:var(--ash-dim);}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .swatch{width:10px; height:10px; border-radius:2px; display:inline-block;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Wildfire CA</h1>
+  <span>satellite-driven spread prediction</span>
+</header>
+
+<div class="layout">
+  <div id="map"></div>
+  <div id="panel">
+
+    <div class="modes">
+      <button data-mode="hindcast">Hindcast</button>
+      <button data-mode="nowcast" class="active">Nowcast</button>
+      <button data-mode="forecast">Forecast</button>
+    </div>
+
+    <div class="field">
+      <label>Area of interest</label>
+      <div class="hint">Map par rectangle draw karo (top-left draw tool). Ek hi AOI active rahega.</div>
+    </div>
+
+    <div class="field" id="date-fields" style="display:none;">
+      <label>Date range</label>
+      <input type="date" id="start-date" />
+      <input type="date" id="end-date" style="margin-top:6px;" />
+      <div class="hint">Hindcast: known fire ki start/end date. Nowcast: khaali chodo — pehla FIRMS detection khud dhoondega.</div>
+    </div>
+
+    <div class="field">
+      <label>Fire detection source</label>
+      <select id="fire-source">
+        <option value="viirs_snpp">VIIRS (S-NPP, 375m)</option>
+        <option value="viirs_noaa20">VIIRS (NOAA-20, 375m)</option>
+        <option value="modis">MODIS (1km)</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Simulation steps</label>
+      <input type="number" id="n-steps" value="24" min="1" max="168" />
+      <div class="hint">1 step ≈ 1 hour of spread.</div>
+    </div>
+
+    <button class="primary" id="prepare-btn">1 · Prepare static layers</button>
+    <button class="primary" id="run-btn" style="background:var(--green); color:#e9e5da;">2 · Run simulation</button>
+    <div id="status"></div>
+
+    <div id="results" style="display:none;">
+      <h2>Result</h2>
+      <img id="frame-view" src="" />
+      <div class="anim-controls">
+        <button id="play-btn">▶</button>
+        <input type="range" id="frame-slider" min="0" max="0" value="0" />
+      </div>
+      <div class="legend">
+        <span><i class="swatch" style="background:#22572e"></i>unburned</span>
+        <span><i class="swatch" style="background:#d95f32"></i>burning</span>
+        <span><i class="swatch" style="background:#282626"></i>burnt</span>
+      </div>
+      <div class="downloads" id="downloads"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+const map = L.map('map').setView([20.5, 78.9], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+}).addTo(map);
+
+const drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+const drawControl = new L.Control.Draw({
+  draw: { rectangle: true, polygon: false, circle: false, marker: false, polyline: false, circlemarker: false },
+  edit: { featureGroup: drawnItems }
+});
+map.addControl(drawControl);
+
+let currentBBox = null;
+map.on(L.Draw.Event.CREATED, (e) => {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+  const b = e.layer.getBounds();
+  currentBBox = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+});
+
+let mode = 'nowcast';
+document.querySelectorAll('.modes button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.modes button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    document.getElementById('date-fields').style.display = (mode === 'hindcast') ? 'block' : 'none';
+  });
+});
+
+function setStatus(msg, isError=false) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = isError ? '#d95f32' : '#8a857b';
+}
+
+async function apiPost(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!res.ok) { const t = await res.text(); throw new Error(t); }
+  return res.json();
+}
+
+document.getElementById('prepare-btn').addEventListener('click', async () => {
+  if (!currentBBox) { setStatus('Pehle map par AOI rectangle draw karo.', true); return; }
+  setStatus('Static layers preparing (GEE) — pehli baar dheer lag sakti hai...');
+  try {
+    const r = await apiPost('/static-layers/prepare', currentBBox);
+    setStatus('Static layers ready ✓ (cached)');
+  } catch (e) { setStatus('Error: ' + e.message, true); }
+});
+
+let frames = [], currentRunId = null, playing = false, playTimer = null;
+
+document.getElementById('run-btn').addEventListener('click', async () => {
+  if (!currentBBox) { setStatus('Pehle map par AOI rectangle draw karo.', true); return; }
+  setStatus('Simulation chal rahi hai...');
+  const payload = {
+    bbox: currentBBox,
+    mode: mode,
+    fire_source: document.getElementById('fire-source').value,
+    n_steps: parseInt(document.getElementById('n-steps').value, 10),
+    start_date: document.getElementById('start-date').value || null,
+    end_date: document.getElementById('end-date').value || null,
+  };
+  try {
+    const r = await apiPost('/run', payload);
+    currentRunId = r.run_id;
+    frames = r.frames;
+    setStatus(`Done — ignition @ ${r.ignition_seed.lat.toFixed(3)}, ${r.ignition_seed.lon.toFixed(3)} (${r.ignition_seed.acq_datetime})`);
+    document.getElementById('results').style.display = 'block';
+    const slider = document.getElementById('frame-slider');
+    slider.max = frames.length - 1;
+    slider.value = 0;
+    showFrame(0, r.frames_base_url);
+    document.getElementById('downloads').innerHTML = `
+      <a href="${r.final_state_download}" download>Download final CA state (.npy)</a>
+      <a href="/static-layers/download/curing_index?west=${currentBBox.west}&south=${currentBBox.south}&east=${currentBBox.east}&north=${currentBBox.north}" download>Download curing index (.tif)</a>
+      <a href="/static-layers/download/lai?west=${currentBBox.west}&south=${currentBBox.south}&east=${currentBBox.east}&north=${currentBBox.north}" download>Download LAI (.tif)</a>
+      <a href="/static-layers/download/slope_aspect?west=${currentBBox.west}&south=${currentBBox.south}&east=${currentBBox.east}&north=${currentBBox.north}" download>Download slope/aspect (.tif)</a>
+      <a href="/static-layers/download/fuel_landcover?west=${currentBBox.west}&south=${currentBBox.south}&east=${currentBBox.east}&north=${currentBBox.north}" download>Download fuel/landcover (.tif)</a>
+    `;
+    slider.oninput = () => showFrame(parseInt(slider.value, 10), r.frames_base_url);
+  } catch (e) { setStatus('Error: ' + e.message, true); }
+});
+
+function showFrame(i, baseUrl) {
+  document.getElementById('frame-view').src = baseUrl + frames[i];
+  document.getElementById('frame-slider').value = i;
+}
+
+document.getElementById('play-btn').addEventListener('click', () => {
+  playing = !playing;
+  document.getElementById('play-btn').textContent = playing ? '⏸' : '▶';
+  if (playing) {
+    let i = parseInt(document.getElementById('frame-slider').value, 10);
+    playTimer = setInterval(() => {
+      i = (i + 1) % frames.length;
+      document.getElementById('frame-slider').value = i;
+      showFrame(i, `/outputs/${currentRunId}/`);
+    }, 350);
+  } else {
+    clearInterval(playTimer);
+  }
+});
+</script>
+</body>
+  </html>
