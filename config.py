@@ -43,6 +43,7 @@ OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
 GEE_SERVICE_ACCOUNT = os.environ.get("GEE_SERVICE_ACCOUNT", "")
 GEE_PRIVATE_KEY_FILE = os.environ.get("GEE_PRIVATE_KEY_FILE", "")
+GEE_SERVICE_ACCOUNT_KEY_JSON = os.environ.get("GEE_SERVICE_ACCOUNT_KEY_JSON", "")
 
 # --- CA grid defaults ---
 DEFAULT_CELL_SIZE_M = 30       # Sentinel-2/Landsat native resolution ke saath match
