@@ -24,7 +24,7 @@ import ee
 
 from config import (
     STATIC_LAYERS_DIR, STATIC_LAYER_TTL,
-    GEE_SERVICE_ACCOUNT, GEE_PRIVATE_KEY_FILE,
+    GEE_SERVICE_ACCOUNT, GEE_PRIVATE_KEY_FILE, GEE_SERVICE_ACCOUNT_KEY_JSON,
 )
 from cache_manager import DiskCache, make_key
 
@@ -37,15 +37,15 @@ def init_ee():
     global _ee_initialized
     if _ee_initialized:
         return
-    if GEE_SERVICE_ACCOUNT and GEE_PRIVATE_KEY_FILE:
+    if GEE_SERVICE_ACCOUNT and GEE_SERVICE_ACCOUNT_KEY_JSON:
+        credentials = ee.ServiceAccountCredentials(GEE_SERVICE_ACCOUNT, key_data=GEE_SERVICE_ACCOUNT_KEY_JSON)
+        ee.Initialize(credentials)
+    elif GEE_SERVICE_ACCOUNT and GEE_PRIVATE_KEY_FILE:
         credentials = ee.ServiceAccountCredentials(GEE_SERVICE_ACCOUNT, GEE_PRIVATE_KEY_FILE)
         ee.Initialize(credentials)
     else:
-        # local/dev: pehle ek baar `earthengine authenticate` chala chuke ho to
-        # yeh cached user credentials use kar lega.
         ee.Initialize()
     _ee_initialized = True
-
 
 def _aoi_geometry(bbox: Tuple[float, float, float, float]) -> "ee.Geometry":
     west, south, east, north = bbox
