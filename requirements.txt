@@ -7,4 +7,5 @@ Pillow==10.4.0
 python-multipart==0.0.9
 earthengine-api==0.1.408
 geemap==0.32.1
+ipython==8.34.0
 pydantic==2.8.2
